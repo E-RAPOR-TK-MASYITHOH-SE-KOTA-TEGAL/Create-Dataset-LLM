@@ -3,50 +3,217 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Haisen Dev Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Login - SKRIPSI Control Center</title>
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-card: #1e293b;
+            --border-color: #334155;
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
+            --accent-cyan: #38bdf8;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 32px 28px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .login-badge {
+            align-self: center;
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            font-size: 0.72rem;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .login-title {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: #fff;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        .login-sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: -8px;
+            line-height: 1.4;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+
+        .input-control {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #f8fafc;
+            padding: 11px 14px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .input-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25);
+        }
+
+        .btn-submit {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.92rem;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.05s ease;
+            margin-top: 4px;
+        }
+
+        .btn-submit:hover { background: var(--primary-hover); }
+        .btn-submit:active { transform: scale(0.99); }
+        .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 9px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            text-align: center;
+            display: none;
+            line-height: 1.4;
+        }
+
+        .hint-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px dashed #334155;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+    </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex justify-center items-center">
-    <!-- WRAPPER LOGIN DI TENGAH LAYAR -->
-    <div class="bg-gray-800 p-8 rounded-lg shadow-lg w-96 border border-gray-700 hidden" id="login-box">
-        <h2 class="text-2xl font-bold mb-6 text-center text-blue-400">🔒 System Login</h2>
-        <input type="text" id="username" placeholder="Username" class="w-full p-3 mb-4 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-blue-500">
-        <input type="password" id="password" placeholder="Password" class="w-full p-3 mb-6 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-blue-500" onkeypress="if(event.key === 'Enter') login()">
-        <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition-colors">LOGIN</button>
-        <p id="login-error" class="text-red-500 mt-3 text-center hidden text-sm"></p>
+<body>
+    <div class="login-card" id="login-card">
+        <div class="login-badge">TK Masyithoh VII</div>
+        <h1 class="login-title">SKRIPSI CONTROL CENTER</h1>
+        <p class="login-sub">Masuk untuk mengakses Live Monitor, Terminal, dan Dataset Generator</p>
+
+        <div class="alert-error" id="login-error"></div>
+
+        <form onsubmit="handleFormSubmit(event)" style="display:flex; flex-direction:column; gap:14px;">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" class="input-control" value="husain" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" class="input-control" value="password_skripsi_aman" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn-submit" id="btn-login">Masuk ke Dashboard</button>
+        </form>
+
+        <div class="hint-box">
+            Kredensial Default: <strong>husain</strong> / <strong>password_skripsi_aman</strong>
+        </div>
     </div>
 
     <script>
-        // Jika sudah punya token, langsung redirect ke halaman utama (Dashboard)
-        if (localStorage.getItem('token')) {
+        // Cek jika sudah memiliki token tersimpan, langsung arahkan ke dashboard
+        const existingToken = localStorage.getItem('token') || localStorage.getItem('skripsi_auth_token');
+        if (existingToken) {
             window.location.href = '/';
-        } else {
-            // Tampilkan box setelah dicek belum login (agar tidak kedip)
-            document.getElementById('login-box').classList.remove('hidden');
         }
 
-        async function login() {
-            const u = document.getElementById('username').value;
-            const p = document.getElementById('password').value;
-            const formData = new URLSearchParams();
-            formData.append('username', u);
-            formData.append('password', p);
-
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: formData
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                localStorage.setItem('token', data.access_token);
-                window.location.href = '/'; // Pindah ke dashboard setelah sukses
-            } else {
-                const err = document.getElementById('login-error');
-                err.innerText = "Username/Password Salah!";
-                err.classList.remove('hidden');
+        async function handleFormSubmit(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
+
+            const u = (document.getElementById('username').value || '').trim();
+            const p = (document.getElementById('password').value || '').trim();
+            const errBox = document.getElementById('login-error');
+            const btn = document.getElementById('btn-login');
+
+            errBox.style.display = 'none';
+            btn.disabled = true;
+            btn.innerText = 'Memverifikasi...';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.access_token) {
+                    // Simpan pada kedua key agar sinkron di semua halaman
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('skripsi_auth_token', data.access_token);
+                    window.location.href = '/';
+                } else {
+                    errBox.innerText = data.detail || 'Username atau password salah!';
+                    errBox.style.display = 'block';
+                }
+            } catch (err) {
+                errBox.innerText = 'Gagal menghubungi server API. Pastikan server aktif: python api_ai.py';
+                errBox.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Masuk ke Dashboard';
+            }
+
+            return false;
         }
     </script>
 </body>

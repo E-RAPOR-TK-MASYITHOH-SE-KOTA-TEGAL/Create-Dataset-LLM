@@ -325,6 +325,10 @@ def after_request(response):
 def index():
     return render_template("dashboard.html")
 
+@app.route("/login")
+def login_page():
+    return render_template("login.html")
+
 @app.route("/connection", methods=["GET"])
 def connection():
     return jsonify({
@@ -339,8 +343,8 @@ def login():
     if request.method == "OPTIONS":
         return jsonify({}), 200
     body = request.get_json(force=True, silent=True) or {}
-    username = (request.form.get("username") or body.get("username", "") or "").strip()
-    password = (request.form.get("password") or body.get("password", "") or "").strip()
+    username = (request.form.get("username") or body.get("username", "") or request.values.get("username", "")).strip()
+    password = (request.form.get("password") or body.get("password", "") or request.values.get("password", "")).strip()
     print(f"[AUTH ATTEMPT] username='{username}', password_length={len(password)}")
     if username.lower() == "husain" and password == "password_skripsi_aman":
         return jsonify({"access_token": "skripsi_jwt_token_husain_2026", "token_type": "bearer"})
