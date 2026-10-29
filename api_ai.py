@@ -4,6 +4,7 @@ import time
 import json
 import uuid
 import base64
+import ctypes
 import threading
 import subprocess
 from io import BytesIO
@@ -17,7 +18,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 try:
     import pyautogui
     pyautogui.FAILSAFE = False
-    pyautogui.PAUSE = 0.01
+    pyautogui.PAUSE = 0.005
 except ImportError:
     pyautogui = None
 
@@ -38,7 +39,145 @@ app.config["SECRET_KEY"] = "skripsi_husain_secret_key"
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # ==============================================================================
-# PEMERIKSAAN & PEMUATAN MODEL AI LOKAL (SEBELUM SERVER AKTIF)
+# WIN32 SETUP — DPI + SendInput structures
+# ==============================================================================
+if os.name == "nt":
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+# SendInput structures
+INPUT_MOUSE    = 0
+INPUT_KEYBOARD = 1
+
+MOUSEEVENTF_MOVE        = 0x0001
+MOUSEEVENTF_LEFTDOWN    = 0x0002
+MOUSEEVENTF_LEFTUP      = 0x0004
+MOUSEEVENTF_RIGHTDOWN   = 0x0008
+MOUSEEVENTF_RIGHTUP     = 0x0010
+MOUSEEVENTF_MIDDLEDOWN  = 0x0020
+MOUSEEVENTF_MIDDLEUP    = 0x0040
+MOUSEEVENTF_WHEEL       = 0x0800
+MOUSEEVENTF_HWHEEL      = 0x1000
+MOUSEEVENTF_ABSOLUTE    = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+
+KEYEVENTF_EXTENDEDKEY = 0x0001
+KEYEVENTF_KEYUP       = 0x0002
+KEYEVENTF_UNICODE     = 0x0004
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT)]
+
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("_input", _INPUT_UNION)]
+
+def _send_input(*inputs):
+    arr = (INPUT * len(inputs))(*inputs)
+    ctypes.windll.user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
+
+def _make_mouse_input(flags, dx=0, dy=0, data=0):
+    mi = MOUSEINPUT(dx=dx, dy=dy, mouseData=data, dwFlags=flags, time=0,
+                    dwExtraInfo=ctypes.pointer(ctypes.c_ulong(0)))
+    return INPUT(type=INPUT_MOUSE, _input=_INPUT_UNION(mi=mi))
+
+def _make_key_input(vk, flags=0, scan=0):
+    ki = KEYBDINPUT(wVk=vk, wScan=scan, dwFlags=flags, time=0,
+                    dwExtraInfo=ctypes.pointer(ctypes.c_ulong(0)))
+    return INPUT(type=INPUT_KEYBOARD, _input=_INPUT_UNION(ki=ki))
+
+# VK codes
+VK_MAP = {
+    "Enter": 0x0D, "Return": 0x0D,
+    "Backspace": 0x08, "Tab": 0x09, "Escape": 0x1B, "Esc": 0x1B,
+    "Delete": 0x2E, "Insert": 0x2D, "Home": 0x24, "End": 0x23,
+    "PageUp": 0x21, "PageDown": 0x22,
+    "ArrowUp": 0x26, "ArrowDown": 0x28, "ArrowLeft": 0x25, "ArrowRight": 0x27,
+    "F1": 0x70, "F2": 0x71, "F3": 0x72, "F4": 0x73,
+    "F5": 0x74, "F6": 0x75, "F7": 0x76, "F8": 0x77,
+    "F9": 0x78, "F10": 0x79, "F11": 0x7A, "F12": 0x7B,
+    "PrintScreen": 0x2C, "ScrollLock": 0x91, "Pause": 0x13,
+    "CapsLock": 0x14, "NumLock": 0x90,
+    "Shift": 0x10, "Control": 0x11, "Alt": 0x12,
+    "Meta": 0x5B, "Win": 0x5B,
+    " ": 0x20, "Space": 0x20,
+}
+
+EXTENDED_KEYS = {0x26, 0x28, 0x25, 0x27, 0x2E, 0x2D, 0x24, 0x23, 0x21, 0x22, 0x5B}
+
+def send_vk(vk, down=True):
+    flags = 0
+    if not down:
+        flags |= KEYEVENTF_KEYUP
+    if vk in EXTENDED_KEYS:
+        flags |= KEYEVENTF_EXTENDEDKEY
+    _send_input(_make_key_input(vk, flags))
+
+def send_unicode_char(ch, down=True):
+    flags = KEYEVENTF_UNICODE | (0 if down else KEYEVENTF_KEYUP)
+    _send_input(_make_key_input(0, flags, scan=ord(ch)))
+
+def press_vk_with_modifiers(vk, ctrl=False, alt=False, shift=False, meta=False):
+    mods = []
+    if ctrl:  mods.append(0x11)
+    if alt:   mods.append(0x12)
+    if shift: mods.append(0x10)
+    if meta:  mods.append(0x5B)
+    for m in mods:
+        send_vk(m, down=True)
+    send_vk(vk, down=True)
+    send_vk(vk, down=False)
+    for m in reversed(mods):
+        send_vk(m, down=False)
+
+# ==============================================================================
+# SCREEN METRICS
+# ==============================================================================
+def get_screen_metrics():
+    if os.name == "nt":
+        try:
+            w = ctypes.windll.user32.GetSystemMetrics(0)
+            h = ctypes.windll.user32.GetSystemMetrics(1)
+            if w > 0 and h > 0:
+                return w, h
+        except Exception:
+            pass
+    if pyautogui:
+        return pyautogui.size()
+    return 1920, 1080
+
+def win_set_cursor(x, y):
+    screen_w, screen_h = get_screen_metrics()
+    abs_x = int(x * 65535 / max(screen_w - 1, 1))
+    abs_y = int(y * 65535 / max(screen_h - 1, 1))
+    _send_input(_make_mouse_input(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+                                   dx=abs_x, dy=abs_y))
+
+def win_mouse_event(flags, data=0):
+    _send_input(_make_mouse_input(flags, data=data))
+
+# ==============================================================================
+# MODEL AI
 # ==============================================================================
 tokenizer = None
 model = None
@@ -59,33 +198,31 @@ def ensure_and_load_model():
             model_complete = True
 
     if not model_complete:
-        print("[INFO] Model belum ada atau belum lengkap di folder lokal.")
-        print("[INFO] Menjalankan ai.py untuk mendownload model secara utuh...")
+        print("[INFO] Model belum ada. Menjalankan ai.py untuk download...")
         res_ai = subprocess.run([sys.executable, os.path.join(BASE_DIR, "ai.py")])
         if res_ai.returncode != 0:
             print("[WARN] ai.py selesai dengan kode peringatan.")
-
-        print("[INFO] Menjalankan fix_config.py (1x) untuk sinkronisasi konfigurasi...")
+        print("[INFO] Menjalankan fix_config.py...")
         subprocess.run([sys.executable, os.path.join(BASE_DIR, "fix_config.py")])
 
     print(f"[INFO] Memuat tokenizer dan model dari: {MODEL_DIR}")
     try:
         tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
         use_cuda = torch.cuda.is_available()
-        print(f"[INFO] Akselerasi CUDA GPU: {'AKTIF' if use_cuda else 'TIDAK TERSEDIA (CPU Mode)'}")
+        print(f"[INFO] CUDA: {'AKTIF' if use_cuda else 'TIDAK TERSEDIA (CPU)'}")
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_DIR,
             torch_dtype=torch.float16 if use_cuda else torch.float32,
             device_map="auto" if use_cuda else None
         )
         model_status = {"loaded": True, "message": "Model AI Lokal Siap Digunakan"}
-        print("[INFO] Model AI Lokal berhasil dimuat ke memori!")
+        print("[INFO] Model AI berhasil dimuat!")
     except Exception as e:
         model_status = {"loaded": False, "message": f"Gagal memuat model: {e}"}
         print(f"[ERROR] {model_status['message']}")
 
 # ==============================================================================
-# MULTI TERMINAL SESSIONS
+# MULTI TERMINAL — PowerShell binary mode with robust reader
 # ==============================================================================
 terminals = {}
 
@@ -96,97 +233,54 @@ def start_terminal_session(term_id=None, name=None):
         name = f"Terminal {len(terminals) + 1}"
 
     proc = subprocess.Popen(
-        ["cmd.exe"],
+        ["powershell.exe", "-NoLogo", "-NoExit", "-Command", "-"],
         cwd=BASE_DIR,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
+        bufsize=0,  # unbuffered binary
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     )
 
     terminals[term_id] = {"process": proc, "name": name}
 
     def reader():
+        buf = b""
         while True:
-            line = proc.stdout.readline()
-            if not line:
+            try:
+                chunk = proc.stdout.read(1)
+                if not chunk:
+                    break
+                buf += chunk
+                # Try to decode accumulated buffer (UTF-8 may span multiple bytes)
+                try:
+                    text = buf.decode("utf-8", errors="replace")
+                    buf = b""
+                    socketio.emit("terminal_output", {"term_id": term_id, "data": text})
+                except Exception:
+                    pass
+            except Exception:
                 break
-            socketio.emit("terminal_output", {"term_id": term_id, "data": line})
 
     threading.Thread(target=reader, daemon=True).start()
     return term_id, name
 
-# Set DPI awareness for exact 1:1 remote pixel mapping
-if os.name == "nt":
-    try:
-        import ctypes
-        ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
+def write_terminal(tid, cmd):
+    if tid not in terminals:
+        return
+    proc = terminals[tid]["process"]
+    if proc.stdin and proc.poll() is None:
+        try:
+            proc.stdin.write((cmd + "\n").encode("utf-8"))
+            proc.stdin.flush()
+        except Exception as e:
+            socketio.emit("terminal_output", {"term_id": tid, "data": f"[ERROR] {e}\r\n"})
 
 # ==============================================================================
-# SCREEN STREAMING & REMOTE ANYDESK CONTROL
+# SCREEN STREAMING
 # ==============================================================================
 screen_active_clients = 0
 screen_streaming_enabled = False
-
-def get_screen_metrics():
-    if os.name == "nt":
-        try:
-            w = ctypes.windll.user32.GetSystemMetrics(0)
-            h = ctypes.windll.user32.GetSystemMetrics(1)
-            if w > 0 and h > 0:
-                return w, h
-        except Exception:
-            pass
-    if pyautogui:
-        return pyautogui.size()
-    return 1920, 1080
-
-def win_set_cursor(x, y):
-    if os.name == "nt":
-        try:
-            ctypes.windll.user32.SetCursorPos(int(x), int(y))
-            return
-        except Exception:
-            pass
-    if pyautogui:
-        pyautogui.moveTo(x, y)
-
-def win_mouse_click_down(button="left"):
-    if os.name == "nt":
-        try:
-            flags = 0x0002 if button == "left" else (0x0008 if button == "right" else 0x0020)
-            ctypes.windll.user32.mouse_event(flags, 0, 0, 0, 0)
-            return
-        except Exception:
-            pass
-    if pyautogui:
-        pyautogui.mouseDown(button=button)
-
-def win_mouse_click_up(button="left"):
-    if os.name == "nt":
-        try:
-            flags = 0x0004 if button == "left" else (0x0010 if button == "right" else 0x0040)
-            ctypes.windll.user32.mouse_event(flags, 0, 0, 0, 0)
-            return
-        except Exception:
-            pass
-    if pyautogui:
-        pyautogui.mouseUp(button=button)
-
-def win_mouse_wheel(delta_y):
-    if os.name == "nt":
-        try:
-            ticks = int(-delta_y * 1.5)
-            ctypes.windll.user32.mouse_event(0x0800, 0, 0, ticks, 0)
-            return
-        except Exception:
-            pass
-    if pyautogui:
-        pyautogui.scroll(int(-delta_y * 2))
 
 def capture_screen():
     global sct
@@ -209,14 +303,14 @@ def screen_stream_worker():
                 socketio.emit("screen_frame", {"image": frame_data})
             except Exception:
                 pass
-            time.sleep(0.06)
+            time.sleep(0.05)
         else:
             time.sleep(0.3)
 
 threading.Thread(target=screen_stream_worker, daemon=True).start()
 
 # ==============================================================================
-# API ENDPOINTS COMPATIBLE WITH dataset_generator.py (Port 8000)
+# API ENDPOINTS
 # ==============================================================================
 @app.route("/")
 def index():
@@ -236,10 +330,7 @@ def login():
     username = request.form.get("username") or (request.json or {}).get("username")
     password = request.form.get("password") or (request.json or {}).get("password")
     if username == "husain" and password == "password_skripsi_aman":
-        return jsonify({
-            "access_token": "skripsi_jwt_token_husain_2026",
-            "token_type": "bearer"
-        })
+        return jsonify({"access_token": "skripsi_jwt_token_husain_2026", "token_type": "bearer"})
     return jsonify({"detail": "Username atau password salah"}), 401
 
 @app.route("/generate", methods=["POST"])
@@ -247,7 +338,6 @@ def generate():
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return jsonify({"detail": "Unauthorized"}), 401
-
     if not model_status["loaded"] or model is None or tokenizer is None:
         return jsonify({"detail": "Model AI belum siap: " + model_status["message"]}), 503
 
@@ -273,18 +363,12 @@ def generate():
 
     output_ids = [out_ids[len(in_ids):] for in_ids, out_ids in zip(model_inputs.input_ids, generated_ids)]
     generated_text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-
-    return jsonify({
-        "text": generated_text,
-        "response": generated_text,
-        "generated_text": generated_text
-    })
+    return jsonify({"text": generated_text, "response": generated_text, "generated_text": generated_text})
 
 @app.route("/api/dataset", methods=["GET"])
 def get_dataset():
     if not os.path.exists(DATASET_PATH):
         return jsonify({"total": 0, "rows": []})
-
     rows = []
     total = 0
     with open(DATASET_PATH, "r", encoding="utf-8") as f:
@@ -296,20 +380,13 @@ def get_dataset():
                     rows.append(json.loads(line))
                 except Exception:
                     pass
-
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 15))
     start = max(0, total - (page * limit))
     end = total - ((page - 1) * limit)
     displayed = rows[start:end]
     displayed.reverse()
-
-    return jsonify({
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "rows": displayed
-    })
+    return jsonify({"total": total, "page": page, "limit": limit, "rows": displayed})
 
 # ==============================================================================
 # SOCKETIO EVENTS
@@ -359,116 +436,142 @@ def handle_close_terminal(data):
 def handle_terminal_input(data):
     tid = data.get("term_id")
     cmd = data.get("command", "")
-    if tid in terminals and terminals[tid]["process"].stdin:
-        terminals[tid]["process"].stdin.write(cmd + "\n")
-        terminals[tid]["process"].stdin.flush()
+    if tid:
+        write_terminal(tid, cmd)
 
 @socketio.on("run_generator")
 def handle_run_generator(data=None):
     tid = (data or {}).get("term_id")
     if not tid or tid not in terminals:
-        if terminals:
-            tid = list(terminals.keys())[0]
-        else:
-            tid, _ = start_terminal_session("term-1", "Terminal 1")
+        tid = list(terminals.keys())[0] if terminals else None
+    if not tid:
+        tid, _ = start_terminal_session("term-1", "Terminal 1")
 
-    cmd = f'"{sys.executable}" dataset_generator.py\n'
-    if tid in terminals and terminals[tid]["process"].stdin:
-        terminals[tid]["process"].stdin.write(cmd)
-        terminals[tid]["process"].stdin.flush()
-        socketio.emit("terminal_output", {
-            "term_id": tid,
-            "data": f"\r\n[Executing: {sys.executable} dataset_generator.py]\r\n"
-        })
+    cmd = f'& "{sys.executable}" dataset_generator.py'
+    write_terminal(tid, cmd)
+    socketio.emit("terminal_output", {
+        "term_id": tid,
+        "data": f"\r\n[Executing: {sys.executable} dataset_generator.py]\r\n"
+    })
 
 @socketio.on("stop_generator")
 def handle_stop_generator(data=None):
     tid = (data or {}).get("term_id")
     try:
-        subprocess.run(["powershell", "-Command", "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*dataset_generator.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], capture_output=True)
+        subprocess.run(
+            ["powershell", "-Command",
+             "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*dataset_generator.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
+            capture_output=True
+        )
         msg = "\r\n[STOPPED] Proses dataset_generator.py berhasil dihentikan.\r\n"
         target_id = tid if (tid and tid in terminals) else (list(terminals.keys())[0] if terminals else "term-1")
         socketio.emit("terminal_output", {"term_id": target_id, "data": msg})
     except Exception as e:
         print(f"[ERROR] Gagal menghentikan generator: {e}")
 
+# ==============================================================================
+# MOUSE CONTROL — Full SendInput, drag, middle, scroll + pinch
+# ==============================================================================
 @socketio.on("mouse_control")
 def handle_mouse_control(data):
     screen_w, screen_h = get_screen_metrics()
     action = data.get("action")
     raw_x = data.get("x", 0)
     raw_y = data.get("y", 0)
-    x = int(raw_x * screen_w)
-    y = int(raw_y * screen_h)
+    px = int(raw_x * screen_w)
+    py = int(raw_y * screen_h)
 
     if action == "move":
-        win_set_cursor(x, y)
-    elif action == "mousedown":
-        button = data.get("button", "left")
-        win_set_cursor(x, y)
-        win_mouse_click_down(button)
-    elif action == "mouseup":
-        button = data.get("button", "left")
-        win_set_cursor(x, y)
-        win_mouse_click_up(button)
-    elif action == "click":
-        button = data.get("button", "left")
-        win_set_cursor(x, y)
-        win_mouse_click_down(button)
-        win_mouse_click_up(button)
-    elif action == "dblclick":
-        win_set_cursor(x, y)
-        win_mouse_click_down("left")
-        win_mouse_click_up("left")
-        time.sleep(0.04)
-        win_mouse_click_down("left")
-        win_mouse_click_up("left")
-    elif action == "scroll":
-        delta = float(data.get("deltaY", 0))
-        win_mouse_wheel(delta)
+        win_set_cursor(px, py)
 
+    elif action == "mousedown":
+        btn = data.get("button", "left")
+        win_set_cursor(px, py)
+        if btn == "right":
+            win_mouse_event(MOUSEEVENTF_RIGHTDOWN)
+        elif btn == "middle":
+            win_mouse_event(MOUSEEVENTF_MIDDLEDOWN)
+        else:
+            win_mouse_event(MOUSEEVENTF_LEFTDOWN)
+
+    elif action == "mouseup":
+        btn = data.get("button", "left")
+        win_set_cursor(px, py)
+        if btn == "right":
+            win_mouse_event(MOUSEEVENTF_RIGHTUP)
+        elif btn == "middle":
+            win_mouse_event(MOUSEEVENTF_MIDDLEUP)
+        else:
+            win_mouse_event(MOUSEEVENTF_LEFTUP)
+
+    elif action == "click":
+        btn = data.get("button", "left")
+        win_set_cursor(px, py)
+        if btn == "right":
+            win_mouse_event(MOUSEEVENTF_RIGHTDOWN)
+            win_mouse_event(MOUSEEVENTF_RIGHTUP)
+        elif btn == "middle":
+            win_mouse_event(MOUSEEVENTF_MIDDLEDOWN)
+            win_mouse_event(MOUSEEVENTF_MIDDLEUP)
+        else:
+            win_mouse_event(MOUSEEVENTF_LEFTDOWN)
+            win_mouse_event(MOUSEEVENTF_LEFTUP)
+
+    elif action == "dblclick":
+        win_set_cursor(px, py)
+        win_mouse_event(MOUSEEVENTF_LEFTDOWN)
+        win_mouse_event(MOUSEEVENTF_LEFTUP)
+        time.sleep(0.035)
+        win_mouse_event(MOUSEEVENTF_LEFTDOWN)
+        win_mouse_event(MOUSEEVENTF_LEFTUP)
+
+    elif action == "scroll":
+        delta_y = float(data.get("deltaY", 0))
+        delta_x = float(data.get("deltaX", 0))
+        if abs(delta_y) >= abs(delta_x):
+            ticks = int(-delta_y * 1.2)
+            win_mouse_event(MOUSEEVENTF_WHEEL, data=ticks & 0xFFFFFFFF)
+        else:
+            ticks = int(delta_x * 1.2)
+            win_mouse_event(MOUSEEVENTF_HWHEEL, data=ticks & 0xFFFFFFFF)
+
+    elif action == "scroll_zoom":
+        # Pinch-to-zoom simulation: Ctrl + Wheel
+        delta = float(data.get("delta", 0))
+        ticks = int(delta * 120)
+        send_vk(0x11, down=True)   # Ctrl down
+        win_mouse_event(MOUSEEVENTF_WHEEL, data=ticks & 0xFFFFFFFF)
+        send_vk(0x11, down=False)  # Ctrl up
+
+# ==============================================================================
+# KEYBOARD CONTROL — Full VK, unicode, modifiers, F1-F12, Win key
+# ==============================================================================
 @socketio.on("keyboard_control")
 def handle_keyboard_control(data):
-    if not pyautogui:
-        return
-    key = data.get("key")
+    key = data.get("key", "")
     text = data.get("text")
     modifiers = data.get("modifiers") or {}
-
-    # Handle Ctrl / Alt / Shift combinations
-    ctrl = modifiers.get("ctrl", False)
-    alt = modifiers.get("alt", False)
+    ctrl  = modifiers.get("ctrl", False)
+    alt   = modifiers.get("alt", False)
     shift = modifiers.get("shift", False)
+    meta  = modifiers.get("meta", False)
 
-    if ctrl and key and len(key) == 1:
-        pyautogui.hotkey("ctrl", key.lower())
-        return
-    elif alt and key and len(key) == 1:
-        pyautogui.hotkey("alt", key.lower())
+    # Named key → VK
+    vk = VK_MAP.get(key)
+
+    # Single printable character with modifier
+    if not vk and len(key) == 1:
+        vk = ctypes.windll.user32.VkKeyScanW(ord(key)) & 0xFF
+
+    if vk:
+        press_vk_with_modifiers(vk, ctrl=ctrl, alt=alt, shift=shift, meta=meta)
         return
 
-    if text:
-        pyautogui.write(text)
-    elif key:
-        key_map = {
-            "Enter": "enter",
-            "Backspace": "backspace",
-            "Tab": "tab",
-            "Escape": "esc",
-            "ArrowUp": "up",
-            "ArrowDown": "down",
-            "ArrowLeft": "left",
-            "ArrowRight": "right",
-            "Delete": "delete",
-            "Home": "home",
-            "End": "end",
-            "PageUp": "pageup",
-            "PageDown": "pagedown",
-            " ": "space"
-        }
-        target_key = key_map.get(key, key.lower() if len(key) == 1 else None)
-        if target_key:
-            pyautogui.press(target_key)
+    # Pure text input (no modifiers)
+    if text and not ctrl and not alt and not meta:
+        for ch in text:
+            send_unicode_char(ch, down=True)
+            send_unicode_char(ch, down=False)
 
 if __name__ == "__main__":
     ensure_and_load_model()

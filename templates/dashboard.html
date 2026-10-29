@@ -850,24 +850,69 @@
         overlay.addEventListener("wheel", (e) => {
             if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
             e.preventDefault();
-            socket.emit("mouse_control", { action: "scroll", deltaY: e.deltaY });
+            socket.emit("mouse_control", { action: "scroll", deltaY: e.deltaY, deltaX: e.deltaX });
         }, { passive: false });
 
         overlay.addEventListener("keydown", (e) => {
             if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
-            if (["Tab", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Delete"].includes(e.key) || e.ctrlKey || e.altKey) {
+            const preventKeys = ["Tab","Backspace","Delete","Home","End","PageUp","PageDown",
+                                 "ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "];
+            if (preventKeys.includes(e.key) || e.ctrlKey || e.altKey || e.metaKey) {
                 e.preventDefault();
             }
             socket.emit("keyboard_control", {
                 key: e.key,
-                text: (e.key.length === 1 && !e.ctrlKey && !e.altKey) ? e.key : null,
-                modifiers: {
-                    ctrl: e.ctrlKey,
-                    alt: e.altKey,
-                    shift: e.shiftKey,
-                    meta: e.metaKey
-                }
+                text: (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ? e.key : null,
+                modifiers: { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey }
             });
+        });
+
+        // ── Touch / Pointer events (mobile & tablet AnyDesk) ─────────────
+        let touchStartDist = 0;
+        let isDragging = false;
+
+        overlay.addEventListener("touchstart", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            e.preventDefault();
+            if (e.touches.length === 2) {
+                const dx = e.touches[1].clientX - e.touches[0].clientX;
+                const dy = e.touches[1].clientY - e.touches[0].clientY;
+                touchStartDist = Math.hypot(dx, dy);
+            } else {
+                const c = getNormalizedCoords(e);
+                socket.emit("mouse_control", { action: "mousedown", button: "left", x: c.x, y: c.y });
+                isDragging = true;
+            }
+        }, { passive: false });
+
+        overlay.addEventListener("touchmove", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            e.preventDefault();
+            if (e.touches.length === 2) {
+                const dx = e.touches[1].clientX - e.touches[0].clientX;
+                const dy = e.touches[1].clientY - e.touches[0].clientY;
+                const dist = Math.hypot(dx, dy);
+                const delta = (dist - touchStartDist) * 0.5;
+                touchStartDist = dist;
+                socket.emit("mouse_control", { action: "scroll_zoom", delta });
+            } else {
+                const c = getNormalizedCoords(e);
+                socket.emit("mouse_control", { action: "move", x: c.x, y: c.y });
+            }
+        }, { passive: false });
+
+        overlay.addEventListener("touchend", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            e.preventDefault();
+            if (isDragging) {
+                const t = e.changedTouches[0];
+                const rect = overlay.getBoundingClientRect();
+                const cx = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+                const cy = Math.max(0, Math.min(1, (t.clientY - rect.top) / rect.height));
+                socket.emit("mouse_control", { action: "mouseup", button: "left", x: cx, y: cy });
+                isDragging = false;
+            }
+        }, { passive: false });
         });
 
         // =====================================================================
