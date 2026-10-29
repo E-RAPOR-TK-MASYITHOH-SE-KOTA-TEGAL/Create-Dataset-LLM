@@ -217,9 +217,11 @@ def ensure_and_load_model():
         )
         model_status = {"loaded": True, "message": "Model AI Lokal Siap Digunakan"}
         print("[INFO] Model AI berhasil dimuat!")
+        socketio.emit("model_status", model_status)
     except Exception as e:
         model_status = {"loaded": False, "message": f"Gagal memuat model: {e}"}
         print(f"[ERROR] {model_status['message']}")
+        socketio.emit("model_status", model_status)
 
 # ==============================================================================
 # MULTI TERMINAL — PowerShell binary mode with robust reader
@@ -312,6 +314,13 @@ threading.Thread(target=screen_stream_worker, daemon=True).start()
 # ==============================================================================
 # API ENDPOINTS
 # ==============================================================================
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+    return response
+
 @app.route("/")
 def index():
     return render_template("dashboard.html")
@@ -325,12 +334,15 @@ def connection():
         "model_message": model_status["message"]
     })
 
-@app.route("/api/login", methods=["POST"])
+@app.route("/api/login", methods=["POST", "OPTIONS"])
 def login():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
     body = request.get_json(force=True, silent=True) or {}
-    username = request.form.get("username") or body.get("username", "")
-    password = request.form.get("password") or body.get("password", "")
-    if username == "husain" and password == "password_skripsi_aman":
+    username = (request.form.get("username") or body.get("username", "") or "").strip()
+    password = (request.form.get("password") or body.get("password", "") or "").strip()
+    print(f"[AUTH ATTEMPT] username='{username}', password_length={len(password)}")
+    if username.lower() == "husain" and password == "password_skripsi_aman":
         return jsonify({"access_token": "skripsi_jwt_token_husain_2026", "token_type": "bearer"})
     return jsonify({"detail": "Username atau password salah"}), 401
 
@@ -575,7 +587,8 @@ def handle_keyboard_control(data):
             send_unicode_char(ch, down=False)
 
 if __name__ == "__main__":
-    ensure_and_load_model()
+    # Start model loading in background so HTTP/WebSocket server starts immediately
+    threading.Thread(target=ensure_and_load_model, daemon=True).start()
     print("=" * 60)
     print(f"[INFO] Server berjalan di http://127.0.0.1:8000")
     print("=" * 60)
