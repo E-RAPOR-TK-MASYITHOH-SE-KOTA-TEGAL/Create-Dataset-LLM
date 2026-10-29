@@ -118,11 +118,75 @@ def start_terminal_session(term_id=None, name=None):
     threading.Thread(target=reader, daemon=True).start()
     return term_id, name
 
+# Set DPI awareness for exact 1:1 remote pixel mapping
+if os.name == "nt":
+    try:
+        import ctypes
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 # ==============================================================================
-# SCREEN STREAMING CONTROLS (DEFAULT: SCREEN MATI & MODE LIVE)
+# SCREEN STREAMING & REMOTE ANYDESK CONTROL
 # ==============================================================================
 screen_active_clients = 0
-screen_streaming_enabled = False  # Default Mati
+screen_streaming_enabled = False
+
+def get_screen_metrics():
+    if os.name == "nt":
+        try:
+            w = ctypes.windll.user32.GetSystemMetrics(0)
+            h = ctypes.windll.user32.GetSystemMetrics(1)
+            if w > 0 and h > 0:
+                return w, h
+        except Exception:
+            pass
+    if pyautogui:
+        return pyautogui.size()
+    return 1920, 1080
+
+def win_set_cursor(x, y):
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.SetCursorPos(int(x), int(y))
+            return
+        except Exception:
+            pass
+    if pyautogui:
+        pyautogui.moveTo(x, y)
+
+def win_mouse_click_down(button="left"):
+    if os.name == "nt":
+        try:
+            flags = 0x0002 if button == "left" else (0x0008 if button == "right" else 0x0020)
+            ctypes.windll.user32.mouse_event(flags, 0, 0, 0, 0)
+            return
+        except Exception:
+            pass
+    if pyautogui:
+        pyautogui.mouseDown(button=button)
+
+def win_mouse_click_up(button="left"):
+    if os.name == "nt":
+        try:
+            flags = 0x0004 if button == "left" else (0x0010 if button == "right" else 0x0040)
+            ctypes.windll.user32.mouse_event(flags, 0, 0, 0, 0)
+            return
+        except Exception:
+            pass
+    if pyautogui:
+        pyautogui.mouseUp(button=button)
+
+def win_mouse_wheel(delta_y):
+    if os.name == "nt":
+        try:
+            ticks = int(-delta_y * 1.5)
+            ctypes.windll.user32.mouse_event(0x0800, 0, 0, ticks, 0)
+            return
+        except Exception:
+            pass
+    if pyautogui:
+        pyautogui.scroll(int(-delta_y * 2))
 
 def capture_screen():
     global sct
@@ -134,7 +198,7 @@ def capture_screen():
         img = ImageGrab.grab()
     img.thumbnail((1280, 720))
     buffer = BytesIO()
-    img.save(buffer, format="JPEG", quality=60)
+    img.save(buffer, format="JPEG", quality=65)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 def screen_stream_worker():
@@ -145,9 +209,9 @@ def screen_stream_worker():
                 socketio.emit("screen_frame", {"image": frame_data})
             except Exception:
                 pass
-            time.sleep(0.08)
+            time.sleep(0.06)
         else:
-            time.sleep(0.4)
+            time.sleep(0.3)
 
 threading.Thread(target=screen_stream_worker, daemon=True).start()
 
@@ -330,29 +394,38 @@ def handle_stop_generator(data=None):
 
 @socketio.on("mouse_control")
 def handle_mouse_control(data):
-    if not pyautogui:
-        return
-    screen_w, screen_h = pyautogui.size()
+    screen_w, screen_h = get_screen_metrics()
     action = data.get("action")
-    x = int(data.get("x", 0) * screen_w)
-    y = int(data.get("y", 0) * screen_h)
+    raw_x = data.get("x", 0)
+    raw_y = data.get("y", 0)
+    x = int(raw_x * screen_w)
+    y = int(raw_y * screen_h)
 
     if action == "move":
-        pyautogui.moveTo(x, y)
-    elif action == "click":
-        button = data.get("button", "left")
-        pyautogui.click(x=x, y=y, button=button)
-    elif action == "dblclick":
-        pyautogui.doubleClick(x=x, y=y)
+        win_set_cursor(x, y)
     elif action == "mousedown":
         button = data.get("button", "left")
-        pyautogui.mouseDown(x=x, y=y, button=button)
+        win_set_cursor(x, y)
+        win_mouse_click_down(button)
     elif action == "mouseup":
         button = data.get("button", "left")
-        pyautogui.mouseUp(x=x, y=y, button=button)
+        win_set_cursor(x, y)
+        win_mouse_click_up(button)
+    elif action == "click":
+        button = data.get("button", "left")
+        win_set_cursor(x, y)
+        win_mouse_click_down(button)
+        win_mouse_click_up(button)
+    elif action == "dblclick":
+        win_set_cursor(x, y)
+        win_mouse_click_down("left")
+        win_mouse_click_up("left")
+        time.sleep(0.04)
+        win_mouse_click_down("left")
+        win_mouse_click_up("left")
     elif action == "scroll":
-        delta = int(data.get("deltaY", 0))
-        pyautogui.scroll(-delta * 2)
+        delta = float(data.get("deltaY", 0))
+        win_mouse_wheel(delta)
 
 @socketio.on("keyboard_control")
 def handle_keyboard_control(data):
@@ -360,15 +433,42 @@ def handle_keyboard_control(data):
         return
     key = data.get("key")
     text = data.get("text")
+    modifiers = data.get("modifiers") or {}
+
+    # Handle Ctrl / Alt / Shift combinations
+    ctrl = modifiers.get("ctrl", False)
+    alt = modifiers.get("alt", False)
+    shift = modifiers.get("shift", False)
+
+    if ctrl and key and len(key) == 1:
+        pyautogui.hotkey("ctrl", key.lower())
+        return
+    elif alt and key and len(key) == 1:
+        pyautogui.hotkey("alt", key.lower())
+        return
+
     if text:
         pyautogui.write(text)
     elif key:
         key_map = {
-            "Enter": "enter", "Backspace": "backspace", "Tab": "tab",
-            "Escape": "esc", "ArrowUp": "up", "ArrowDown": "down",
-            "ArrowLeft": "left", "ArrowRight": "right", "Delete": "delete"
+            "Enter": "enter",
+            "Backspace": "backspace",
+            "Tab": "tab",
+            "Escape": "esc",
+            "ArrowUp": "up",
+            "ArrowDown": "down",
+            "ArrowLeft": "left",
+            "ArrowRight": "right",
+            "Delete": "delete",
+            "Home": "home",
+            "End": "end",
+            "PageUp": "pageup",
+            "PageDown": "pagedown",
+            " ": "space"
         }
-        pyautogui.press(key_map.get(key, key.lower()))
+        target_key = key_map.get(key, key.lower() if len(key) == 1 else None)
+        if target_key:
+            pyautogui.press(target_key)
 
 if __name__ == "__main__":
     ensure_and_load_model()
