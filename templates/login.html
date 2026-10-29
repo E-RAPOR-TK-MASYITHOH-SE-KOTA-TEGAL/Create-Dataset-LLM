@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Haisen Dev Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex justify-center items-center">
+    <!-- WRAPPER LOGIN DI TENGAH LAYAR -->
+    <div class="bg-gray-800 p-8 rounded-lg shadow-lg w-96 border border-gray-700 hidden" id="login-box">
+        <h2 class="text-2xl font-bold mb-6 text-center text-blue-400">🔒 System Login</h2>
+        <input type="text" id="username" placeholder="Username" class="w-full p-3 mb-4 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-blue-500">
+        <input type="password" id="password" placeholder="Password" class="w-full p-3 mb-6 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-blue-500" onkeypress="if(event.key === 'Enter') login()">
+        <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition-colors">LOGIN</button>
+        <p id="login-error" class="text-red-500 mt-3 text-center hidden text-sm"></p>
+    </div>
+
+    <script>
+        // Jika sudah punya token, langsung redirect ke halaman utama (Dashboard)
+        if (localStorage.getItem('token')) {
+            window.location.href = '/';
+        } else {
+            // Tampilkan box setelah dicek belum login (agar tidak kedip)
+            document.getElementById('login-box').classList.remove('hidden');
+        }
+
+        async function login() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const formData = new URLSearchParams();
+            formData.append('username', u);
+            formData.append('password', p);
+
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('token', data.access_token);
+                window.location.href = '/'; // Pindah ke dashboard setelah sukses
+            } else {
+                const err = document.getElementById('login-error');
+                err.innerText = "Username/Password Salah!";
+                err.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

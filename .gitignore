@@ -1,0 +1,48 @@
+# ==============================================================================
+# GITIGNORE - SKRIPSI HUSAIN MULYANSYAH
+# ==============================================================================
+
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Bobot Model AI Lokal Berukuran Besar (HuggingFace / PyTorch)
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Dataset Output (Opsional: batalkan komentar baris di bawah jika tidak ingin upload dataset ribuan baris)
+# HASIL_DATASET/*.jsonl
+# HASIL_DATASET/*.txt
+
+# Logs & Temporary Files
+*.log
+log.txt
+*.tmp
+
+# Editor & IDE Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Windows System Files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+

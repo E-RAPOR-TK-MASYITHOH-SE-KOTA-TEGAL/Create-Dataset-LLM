@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard AI & Dataset Generator - TK Masyithoh VII</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0b0f19; color: #f1f5f9; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Top Navigation Header */
+        header { background: #111827; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; z-index: 10; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-title { font-size: 1.05rem; font-weight: 700; color: #38bdf8; }
+        .status-pill { font-size: 0.75rem; padding: 3px 8px; border-radius: 9999px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+        .pill-green { background: #064e3b; color: #34d399; }
+        .pill-yellow { background: #713f12; color: #fde047; }
+        .pill-red { background: #7f1d1d; color: #f87171; }
+        .pill-blue { background: #0c4a6e; color: #38bdf8; }
+        
+        .header-actions { display: flex; align-items: center; gap: 12px; }
+        .tab-btn { background: #1f2937; color: #94a3b8; border: 1px solid #374151; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: 0.2s; }
+        .tab-btn.active { background: #0284c7; color: #fff; border-color: #0284c7; }
+        .btn-run { background: #16a34a; color: #fff; border: none; padding: 7px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .btn-run:hover { background: #15803d; }
+
+        /* Main Container Layout */
+        .workspace { flex: 1; display: grid; grid-template-columns: 55% 45%; height: calc(100vh - 56px); overflow: hidden; }
+        .left-col, .right-col { display: flex; flex-direction: column; height: 100%; overflow: hidden; border-right: 1px solid #1f2937; background: #0f172a; }
+        .right-col { border-right: none; }
+
+        /* Section Bar & Control Toolbar */
+        .section-bar { background: #1e293b; padding: 6px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; font-size: 0.8rem; font-weight: 600; color: #94a3b8; }
+        .screen-toolbar { display: flex; align-items: center; gap: 8px; }
+        .btn-tool { background: #334155; color: #e2e8f0; border: 1px solid #475569; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: 0.15s; }
+        .btn-tool:hover { background: #475569; }
+        .btn-tool.active-on { background: #16a34a; color: #fff; border-color: #16a34a; }
+        .btn-tool.active-off { background: #dc2626; color: #fff; border-color: #dc2626; }
+        .btn-tool.active-mode { background: #0284c7; color: #fff; border-color: #0284c7; }
+
+        /* AnyDesk / Live Screen Area */
+        .screen-container { flex: 1; display: flex; justify-content: center; align-items: center; background: #000; position: relative; overflow: hidden; }
+        #live-screen { max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
+        #screen-overlay { position: absolute; inset: 0; outline: none; }
+        #screen-overlay.mode-anydesk { cursor: crosshair; }
+        #screen-overlay.mode-live { cursor: default; }
+
+        .screen-off-placeholder { position: absolute; inset: 0; background: #090d16; display: none; flex-direction: column; justify-content: center; align-items: center; gap: 12px; color: #64748b; z-index: 5; }
+        .screen-off-placeholder.show { display: flex; }
+
+        /* Multi Terminal Tabs */
+        .terminal-tabs { display: flex; gap: 4px; background: #111827; padding: 6px 8px 0 8px; border-bottom: 1px solid #1f2937; overflow-x: auto; }
+        .term-tab { background: #1e293b; color: #94a3b8; padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 8px; border: 1px solid #334155; border-bottom: none; }
+        .term-tab.active { background: #000; color: #38bdf8; border-color: #0284c7; }
+        .term-close { color: #64748b; font-weight: bold; border: none; background: transparent; cursor: pointer; padding: 0 2px; }
+        .term-close:hover { color: #ef4444; }
+        .btn-add-term { background: #1f2937; color: #38bdf8; border: 1px dashed #38bdf8; border-radius: 4px; padding: 2px 8px; font-weight: bold; cursor: pointer; font-size: 0.9rem; }
+        
+        .terminal-body { flex: 1; background: #000; display: flex; flex-direction: column; padding: 8px; overflow: hidden; }
+        .term-view { flex: 1; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; color: #4ade80; white-space: pre-wrap; word-break: break-all; }
+        .term-cmd-bar { display: flex; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #1e293b; }
+        .term-cmd-input { flex: 1; background: #0b0f19; border: 1px solid #334155; border-radius: 4px; color: #f8fafc; padding: 7px 10px; font-family: 'Consolas', monospace; outline: none; font-size: 13px; }
+        .term-send-btn { background: #0284c7; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+
+        /* Dataset View Overlay / Tab */
+        .dataset-panel { flex: 1; display: none; flex-direction: column; background: #0f172a; overflow: hidden; }
+        .dataset-panel.active { display: flex; }
+        .dataset-stats { background: #1e293b; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+        .stat-card { display: flex; flex-direction: column; }
+        .stat-val { font-size: 1.4rem; font-weight: 700; color: #38bdf8; }
+        .stat-lbl { font-size: 0.75rem; color: #94a3b8; }
+        .progress-box { flex: 1; margin: 0 24px; }
+        .progress-bar-bg { background: #334155; height: 10px; border-radius: 5px; overflow: hidden; }
+        .progress-bar-fill { background: #10b981; height: 100%; width: 0%; transition: width 0.3s; }
+        
+        .dataset-list { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+        .data-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+        .tag-capaian { background: #0284c7; color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .section-label { font-size: 0.78rem; color: #38bdf8; font-weight: bold; text-transform: uppercase; margin-top: 6px; }
+        .card-text { font-size: 0.85rem; color: #e2e8f0; line-height: 1.5; background: #0b0f19; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <span class="brand-title">SKRIPSI DATASET GENERATOR</span>
+            <span class="status-pill pill-yellow" id="model-pill">Memuat Model AI...</span>
+            <span class="status-pill pill-green" id="socket-pill">ONLINE</span>
+        </div>
+        <div class="header-actions">
+            <button class="tab-btn active" id="btn-tab-monitor" onclick="switchMainTab('monitor')">Monitor & Terminal</button>
+            <button class="tab-btn" id="btn-tab-dataset" onclick="switchMainTab('dataset')">Hasil Dataset (JSONL)</button>
+            <button class="btn-run" onclick="triggerRunGenerator()">▶ Jalankan Generator</button>
+            <button class="btn-tool active-off" style="padding: 7px 12px; font-size: 0.82rem;" onclick="triggerStopGenerator()">⏹ Stop</button>
+        </div>
+    </header>
+
+    <!-- TAB 1: WORKSPACE (LIVE SCREEN & MULTI TERMINAL) -->
+    <div class="workspace" id="workspace-tab">
+        <!-- Live Screen Column -->
+        <div class="left-col">
+            <div class="section-bar">
+                <span>LIVE SCREEN</span>
+                <div class="screen-toolbar">
+                    <!-- Default Mati -->
+                    <button class="btn-tool active-off" id="btn-screen-power" onclick="toggleScreenPower()">○ Screen: MATI</button>
+                    <!-- Mode Buttons: Default Live Saja -->
+                    <span style="color:#475569;">|</span>
+                    <button class="btn-tool active-mode" id="btn-mode-live" onclick="setScreenMode('live')">Mode Live Saja</button>
+                    <button class="btn-tool" id="btn-mode-anydesk" onclick="setScreenMode('anydesk')">Mode AnyDesk (Kontrol)</button>
+                </div>
+            </div>
+            <div class="screen-container">
+                <img id="live-screen" src="" alt="Live Stream">
+                <div id="screen-overlay" class="mode-live" tabindex="0"></div>
+                <!-- Placeholder saat dimatikan (Default Show) -->
+                <div class="screen-off-placeholder show" id="screen-off-box">
+                    <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                    <span>Live Screen Dimatikan (Default Hemat Resource)</span>
+                    <button class="btn-tool active-on" onclick="toggleScreenPower()">Nyalakan Layar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Multi Terminal Column -->
+        <div class="right-col">
+            <div class="terminal-tabs" id="term-tabs-bar">
+                <!-- Terminal tabs rendered by JS -->
+                <button class="btn-add-term" onclick="addNewTerminal()" title="Buka Terminal Baru">+</button>
+            </div>
+            <div class="terminal-body">
+                <div class="term-view" id="active-term-output"></div>
+                <div class="term-cmd-bar">
+                    <input type="text" class="term-cmd-input" id="term-input" placeholder="Ketik perintah terminal di folder saat ini..." onkeydown="handleTerminalKey(event)">
+                    <button class="term-send-btn" onclick="sendTerminalCommand()">Kirim</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: DATASET VIEWER -->
+    <div class="dataset-panel" id="dataset-panel">
+        <div class="dataset-stats">
+            <div class="stat-card">
+                <span class="stat-val" id="stat-total">0</span>
+                <span class="stat-lbl">Total Data Tersimpan</span>
+            </div>
+            <div class="progress-box">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">
+                    <span>Progress Menuju Target: <strong id="progress-text">0 / 2500</strong></span>
+                    <span id="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progress-fill"></div>
+                </div>
+            </div>
+            <button class="tab-btn" onclick="fetchDatasetData()">🔄 Refresh Data</button>
+        </div>
+        <div class="dataset-list" id="dataset-list">
+            <div style="text-align: center; color: #64748b; margin-top: 40px;">Memuat data...</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let activeTermId = null;
+        let terminalsData = {}; 
+
+        // Status State (Default: Mati & Mode Live Saja)
+        let isScreenPoweredOn = false;
+        let currentScreenMode = "live";
+
+        // Socket Status & Model Status
+        socket.on("connect", () => {
+            const sp = document.getElementById("socket-pill");
+            sp.innerText = "ONLINE";
+            sp.className = "status-pill pill-green";
+        });
+        socket.on("disconnect", () => {
+            const sp = document.getElementById("socket-pill");
+            sp.innerText = "OFFLINE";
+            sp.className = "status-pill pill-red";
+        });
+        socket.on("model_status", (data) => {
+            const mp = document.getElementById("model-pill");
+            mp.innerText = data.message;
+            mp.className = data.loaded ? "status-pill pill-green" : "status-pill pill-yellow";
+        });
+
+        // =====================================================================
+        // SCREEN POWER & MODE SWITCHER
+        // =====================================================================
+        const img = document.getElementById("live-screen");
+        const overlay = document.getElementById("screen-overlay");
+        const offBox = document.getElementById("screen-off-box");
+        const btnPower = document.getElementById("btn-screen-power");
+        const btnAnydesk = document.getElementById("btn-mode-anydesk");
+        const btnLive = document.getElementById("btn-mode-live");
+
+        function toggleScreenPower() {
+            isScreenPoweredOn = !isScreenPoweredOn;
+            socket.emit("toggle_screen", { enabled: isScreenPoweredOn });
+            
+            if (isScreenPoweredOn) {
+                btnPower.innerText = "● Screen: NYALA";
+                btnPower.className = "btn-tool active-on";
+                offBox.classList.remove("show");
+            } else {
+                btnPower.innerText = "○ Screen: MATI";
+                btnPower.className = "btn-tool active-off";
+                offBox.classList.add("show");
+                img.src = "";
+            }
+        }
+
+        function setScreenMode(mode) {
+            currentScreenMode = mode;
+            if (mode === "anydesk") {
+                btnAnydesk.className = "btn-tool active-mode";
+                btnLive.className = "btn-tool";
+                overlay.className = "mode-anydesk";
+            } else {
+                btnLive.className = "btn-tool active-mode";
+                btnAnydesk.className = "btn-tool";
+                overlay.className = "mode-live";
+            }
+        }
+
+        socket.on("screen_frame", (data) => {
+            if (isScreenPoweredOn) {
+                img.src = "data:image/jpeg;base64," + data.image;
+            }
+        });
+
+        function getNormalizedCoords(e) {
+            const rect = img.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+                y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+            };
+        }
+
+        overlay.addEventListener("mousemove", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            const c = getNormalizedCoords(e);
+            socket.emit("mouse_control", { action: "move", x: c.x, y: c.y });
+        });
+
+        overlay.addEventListener("mousedown", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            overlay.focus();
+            const c = getNormalizedCoords(e);
+            const btn = e.button === 2 ? "right" : (e.button === 1 ? "middle" : "left");
+            socket.emit("mouse_control", { action: "mousedown", button: btn, x: c.x, y: c.y });
+        });
+
+        overlay.addEventListener("mouseup", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            const c = getNormalizedCoords(e);
+            const btn = e.button === 2 ? "right" : (e.button === 1 ? "middle" : "left");
+            socket.emit("mouse_control", { action: "mouseup", button: btn, x: c.x, y: c.y });
+        });
+
+        overlay.addEventListener("contextmenu", (e) => e.preventDefault());
+
+        overlay.addEventListener("dblclick", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            const c = getNormalizedCoords(e);
+            socket.emit("mouse_control", { action: "dblclick", x: c.x, y: c.y });
+        });
+
+        overlay.addEventListener("wheel", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            socket.emit("mouse_control", { action: "scroll", deltaY: e.deltaY });
+        });
+
+        overlay.addEventListener("keydown", (e) => {
+            if (!isScreenPoweredOn || currentScreenMode !== "anydesk") return;
+            e.preventDefault();
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
+                socket.emit("keyboard_control", { text: e.key });
+            } else {
+                socket.emit("keyboard_control", { key: e.key });
+            }
+        });
+
+        // =====================================================================
+        // MULTI-TERMINAL MANAGEMENT
+        // =====================================================================
+        socket.on("terminals_list", (data) => {
+            const tabsBar = document.getElementById("term-tabs-bar");
+            tabsBar.innerHTML = "";
+            
+            data.terminals.forEach((term, idx) => {
+                if (!terminalsData[term.id]) {
+                    terminalsData[term.id] = { name: term.name, logs: "" };
+                }
+                
+                const tab = document.createElement("div");
+                tab.className = "term-tab " + (term.id === activeTermId || (activeTermId === null && idx === 0) ? "active" : "");
+                tab.innerHTML = `
+                    <span onclick="selectTerminal('${term.id}')">${term.name}</span>
+                    <button class="term-close" onclick="closeTerminal(event, '${term.id}')">✕</button>
+                `;
+                tabsBar.appendChild(tab);
+
+                if (activeTermId === null && idx === 0) {
+                    activeTermId = term.id;
+                }
+            });
+
+            const addBtn = document.createElement("button");
+            addBtn.className = "btn-add-term";
+            addBtn.innerText = "+";
+            addBtn.title = "Buka Terminal Baru";
+            addBtn.onclick = addNewTerminal;
+            tabsBar.appendChild(addBtn);
+
+            renderActiveTerminal();
+        });
+
+        socket.on("terminal_output", (data) => {
+            if (!terminalsData[data.term_id]) {
+                terminalsData[data.term_id] = { name: "Terminal", logs: "" };
+            }
+            terminalsData[data.term_id].logs += data.data;
+
+            if (data.term_id === activeTermId) {
+                const out = document.getElementById("active-term-output");
+                out.textContent += data.data;
+                out.scrollTop = out.scrollHeight;
+            }
+        });
+
+        function selectTerminal(tid) {
+            activeTermId = tid;
+            document.querySelectorAll(".term-tab").forEach(t => t.classList.remove("active"));
+            renderActiveTerminal();
+        }
+
+        function renderActiveTerminal() {
+            const out = document.getElementById("active-term-output");
+            if (activeTermId && terminalsData[activeTermId]) {
+                out.textContent = terminalsData[activeTermId].logs;
+                out.scrollTop = out.scrollHeight;
+            }
+        }
+
+        function addNewTerminal() {
+            socket.emit("new_terminal");
+        }
+
+        function closeTerminal(e, tid) {
+            e.stopPropagation();
+            socket.emit("close_terminal", { term_id: tid });
+            delete terminalsData[tid];
+            if (activeTermId === tid) {
+                activeTermId = Object.keys(terminalsData)[0] || null;
+            }
+        }
+
+        function sendTerminalCommand() {
+            const input = document.getElementById("term-input");
+            const val = input.value;
+            if (val.trim() !== "" && activeTermId) {
+                socket.emit("terminal_input", { term_id: activeTermId, command: val });
+                input.value = "";
+            }
+        }
+
+        function handleTerminalKey(e) {
+            if (e.key === "Enter") sendTerminalCommand();
+        }
+
+        function triggerRunGenerator() {
+            socket.emit("run_generator", { term_id: activeTermId });
+            switchMainTab("monitor");
+        }
+
+        function triggerStopGenerator() {
+            socket.emit("stop_generator", { term_id: activeTermId });
+        }
+
+        // =====================================================================
+        // DATASET VIEWER (HASIL_DATASET\synthetic_rapor_dataset.jsonl)
+        // =====================================================================
+        function switchMainTab(tab) {
+            const ws = document.getElementById("workspace-tab");
+            const ds = document.getElementById("dataset-panel");
+            const btnM = document.getElementById("btn-tab-monitor");
+            const btnD = document.getElementById("btn-tab-dataset");
+
+            if (tab === "monitor") {
+                ws.style.display = "grid";
+                ds.classList.remove("active");
+                btnM.classList.add("active");
+                btnD.classList.remove("active");
+            } else {
+                ws.style.display = "none";
+                ds.classList.add("active");
+                btnM.classList.remove("active");
+                btnD.classList.add("active");
+                fetchDatasetData();
+            }
+        }
+
+        async function fetchDatasetData() {
+            const listContainer = document.getElementById("dataset-list");
+            try {
+                const res = await fetch("/api/dataset?limit=20");
+                const data = await res.json();
+
+                document.getElementById("stat-total").innerText = data.total;
+                const target = 2500;
+                document.getElementById("progress-text").innerText = `${data.total} / ${target}`;
+                const pct = Math.min(100, ((data.total / target) * 100)).toFixed(1);
+                document.getElementById("progress-percent").innerText = `${pct}%`;
+                document.getElementById("progress-fill").style.width = `${pct}%`;
+
+                if (data.rows.length === 0) {
+                    listContainer.innerHTML = '<div style="text-align: center; color: #64748b; margin-top: 40px;">Belum ada data di HASIL_DATASET/synthetic_rapor_dataset.jsonl</div>';
+                    return;
+                }
+
+                listContainer.innerHTML = "";
+                data.rows.forEach((row, i) => {
+                    const card = document.createElement("div");
+                    card.className = "data-card";
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <span class="tag-capaian">${row.status_capaian || "Status"}</span>
+                            <span style="color:#64748b; font-size:0.75rem;">Item #${data.total - i}</span>
+                        </div>
+                        <div class="section-label">Skenario:</div>
+                        <div class="card-text">${row.skenario || "-"}</div>
+                        <div class="section-label">Observasi:</div>
+                        <div class="card-text">${row.observasi || "-"}</div>
+                        <div class="section-label">Narasi Rapor (5 Poin):</div>
+                        <div class="card-text">${row.narasi || "-"}</div>
+                    `;
+                    listContainer.appendChild(card);
+                });
+            } catch (err) {
+                listContainer.innerHTML = `<div style="color: #ef4444; text-align: center;">Gagal memuat dataset: ${err.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
