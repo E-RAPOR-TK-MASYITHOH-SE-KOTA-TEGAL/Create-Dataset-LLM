@@ -576,16 +576,16 @@
             <div class="login-title">SKRIPSI CONTROL CENTER</div>
             <div class="login-sub">Masuk untuk mengakses Live Screen & Remote Terminal</div>
             <div class="login-error" id="login-error-msg">Username atau password salah!</div>
-            <form onsubmit="handleLoginSubmit(event)" style="display:flex; flex-direction:column; gap:12px;">
+            <form id="login-form" onsubmit="event.preventDefault(); handleLoginSubmit(event); return false;" style="display:flex; flex-direction:column; gap:12px;">
                 <div class="login-field">
                     <label>Username</label>
                     <input type="text" id="login-username" class="login-input" value="husain" required autocomplete="username">
                 </div>
                 <div class="login-field">
                     <label>Password</label>
-                    <input type="password" id="login-password" class="login-input" value="password_skripsi_aman" required autocomplete="current-password">
+                    <input type="password" id="login-password" class="login-input" value="password_skripsi_aman" required autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();handleLoginSubmit(event);}">
                 </div>
-                <button type="submit" class="btn-submit-login" id="btn-login-submit">Masuk ke Dashboard</button>
+                <button type="button" onclick="handleLoginSubmit(event)" class="btn-submit-login" id="btn-login-submit">Masuk ke Dashboard</button>
             </form>
         </div>
     </div>
@@ -683,21 +683,30 @@
 
         function checkAuth() {
             const token = localStorage.getItem("skripsi_auth_token");
+            const overlay = document.getElementById("login-overlay");
             if (token) {
-                loginOverlay.classList.add("hidden");
+                overlay.classList.add("hidden");
+                overlay.style.display = "none";
             } else {
-                loginOverlay.classList.remove("hidden");
+                overlay.classList.remove("hidden");
+                overlay.style.display = "flex";
             }
         }
 
         async function handleLoginSubmit(e) {
-            e.preventDefault();
-            const u = document.getElementById("login-username").value.trim();
-            const p = document.getElementById("login-password").value;
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            const u = (document.getElementById("login-username").value || "").trim();
+            const p = (document.getElementById("login-password").value || "").trim();
             const btn = document.getElementById("btn-login-submit");
-            loginErrorMsg.style.display = "none";
-            btn.disabled = true;
-            btn.innerText = "Memverifikasi...";
+            const errBox = document.getElementById("login-error-msg");
+            errBox.style.display = "none";
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = "Memverifikasi...";
+            }
 
             try {
                 const res = await fetch("/api/login", {
@@ -709,25 +718,31 @@
                 const data = await res.json();
                 if (res.ok && data.access_token) {
                     localStorage.setItem("skripsi_auth_token", data.access_token);
-                    loginOverlay.classList.add("hidden");
+                    const overlay = document.getElementById("login-overlay");
+                    overlay.classList.add("hidden");
+                    overlay.style.display = "none";
                 } else {
-                    loginErrorMsg.innerText = data.detail || "Username atau password salah!";
-                    loginErrorMsg.style.display = "block";
+                    errBox.innerText = data.detail || "Username atau password salah!";
+                    errBox.style.display = "block";
                 }
             } catch (err) {
-                loginErrorMsg.innerText = "Server belum aktif. Jalankan: python api_ai.py";
-                loginErrorMsg.style.display = "block";
+                errBox.innerText = "Gagal terhubung ke server: " + err.message;
+                errBox.style.display = "block";
             } finally {
-                btn.disabled = false;
-                btn.innerText = "Masuk ke Dashboard";
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = "Masuk ke Dashboard";
+                }
             }
+            return false;
         }
 
-        
         function handleLogout() {
             localStorage.removeItem("skripsi_auth_token");
-            if (isScreenPoweredOn) toggleScreenPower();
-            loginOverlay.classList.remove("hidden");
+            if (typeof isScreenPoweredOn !== 'undefined' && isScreenPoweredOn) toggleScreenPower();
+            const overlay = document.getElementById("login-overlay");
+            overlay.classList.remove("hidden");
+            overlay.style.display = "flex";
         }
 
         checkAuth();
