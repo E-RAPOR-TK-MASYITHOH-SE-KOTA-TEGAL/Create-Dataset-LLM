@@ -692,34 +692,38 @@
 
         async function handleLoginSubmit(e) {
             e.preventDefault();
-            const u = document.getElementById("login-username").value;
+            const u = document.getElementById("login-username").value.trim();
             const p = document.getElementById("login-password").value;
+            const btn = document.getElementById("btn-login-submit");
             loginErrorMsg.style.display = "none";
+            btn.disabled = true;
+            btn.innerText = "Memverifikasi...";
 
             try {
-                const formData = new FormData();
-                formData.append("username", u);
-                formData.append("password", p);
-
                 const res = await fetch("/api/login", {
                     method: "POST",
-                    body: formData
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: u, password: p })
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
+                const data = await res.json();
+                if (res.ok && data.access_token) {
                     localStorage.setItem("skripsi_auth_token", data.access_token);
                     loginOverlay.classList.add("hidden");
                 } else {
-                    loginErrorMsg.innerText = "Username atau password salah!";
+                    loginErrorMsg.innerText = data.detail || "Username atau password salah!";
                     loginErrorMsg.style.display = "block";
                 }
             } catch (err) {
-                loginErrorMsg.innerText = "Gagal terhubung ke server: " + err.message;
+                loginErrorMsg.innerText = "Server belum aktif. Jalankan: python api_ai.py";
                 loginErrorMsg.style.display = "block";
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Masuk ke Dashboard";
             }
         }
 
+        
         function handleLogout() {
             localStorage.removeItem("skripsi_auth_token");
             if (isScreenPoweredOn) toggleScreenPower();

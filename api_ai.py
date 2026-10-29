@@ -327,8 +327,9 @@ def connection():
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    username = request.form.get("username") or (request.json or {}).get("username")
-    password = request.form.get("password") or (request.json or {}).get("password")
+    body = request.get_json(force=True, silent=True) or {}
+    username = request.form.get("username") or body.get("username", "")
+    password = request.form.get("password") or body.get("password", "")
     if username == "husain" and password == "password_skripsi_aman":
         return jsonify({"access_token": "skripsi_jwt_token_husain_2026", "token_type": "bearer"})
     return jsonify({"detail": "Username atau password salah"}), 401
