@@ -494,44 +494,6 @@
             border: 1px solid #1f2937;
         }
 
-        /* Login Modal Overlay */
-        #login-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(11, 15, 25, 0.9);
-            backdrop-filter: blur(10px);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-            padding: 16px;
-        }
-
-        #login-overlay.hidden { display: none !important; }
-
-        .login-box {
-            background: #1e293b;
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 28px 24px;
-            width: 100%;
-            max-width: 380px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-
-        .login-title { font-size: 1.2rem; font-weight: 700; color: var(--accent-cyan); text-align: center; }
-        .login-sub { font-size: 0.78rem; color: var(--text-muted); text-align: center; margin-top: -6px; }
-        .login-field { display: flex; flex-direction: column; gap: 5px; }
-        .login-field label { font-size: 0.76rem; font-weight: 600; color: #cbd5e1; }
-        .login-input { background: #0f172a; border: 1px solid var(--border-color); border-radius: 6px; color: #f8fafc; padding: 9px 12px; font-size: 0.88rem; outline: none; }
-        .login-input:focus { border-color: var(--primary); }
-        .btn-submit-login { background: var(--primary); color: #fff; border: none; padding: 9px; border-radius: 6px; font-weight: 700; font-size: 0.88rem; cursor: pointer; margin-top: 6px; }
-        .btn-submit-login:hover { background: var(--primary-hover); }
-        .login-error { color: #f87171; font-size: 0.78rem; text-align: center; display: none; }
-
         /* =====================================================================
            RESPONSIVE BREAKPOINTS (Mobile & Tablet Optimization)
            ===================================================================== */
@@ -570,26 +532,6 @@
     </style>
 </head>
 <body>
-    <!-- LOGIN GATEWAY MODAL -->
-    <div id="login-overlay">
-        <div class="login-box">
-            <div class="login-title">SKRIPSI CONTROL CENTER</div>
-            <div class="login-sub">Masuk untuk mengakses Live Screen & Remote Terminal</div>
-            <div class="login-error" id="login-error-msg">Username atau password salah!</div>
-            <form id="login-form" onsubmit="event.preventDefault(); handleLoginSubmit(event); return false;" style="display:flex; flex-direction:column; gap:12px;">
-                <div class="login-field">
-                    <label>Username</label>
-                    <input type="text" id="login-username" class="login-input" value="husain" required autocomplete="username">
-                </div>
-                <div class="login-field">
-                    <label>Password</label>
-                    <input type="password" id="login-password" class="login-input" value="password_skripsi_aman" required autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();handleLoginSubmit(event);}">
-                </div>
-                <button type="button" onclick="handleLoginSubmit(event)" class="btn-submit-login" id="btn-login-submit">Masuk ke Dashboard</button>
-            </form>
-        </div>
-    </div>
-
     <!-- MAIN HEADER -->
     <header>
         <div class="brand">
@@ -676,82 +618,19 @@
 
     <script>
         // =====================================================================
-        // AUTHENTICATION & LOGIN GATEWAY
+        // AUTHENTICATION GUARD (Otomatis diarahkan ke /login jika belum login)
         // =====================================================================
-        const loginOverlay = document.getElementById("login-overlay");
-        const loginErrorMsg = document.getElementById("login-error-msg");
-
-        function checkAuth() {
-            const token = localStorage.getItem("token") || localStorage.getItem("skripsi_auth_token");
-            const overlay = document.getElementById("login-overlay");
-            if (token) {
-                if (overlay) {
-                    overlay.classList.add("hidden");
-                    overlay.style.display = "none";
-                }
-            } else {
-                if (overlay) {
-                    overlay.classList.remove("hidden");
-                    overlay.style.display = "flex";
-                }
-            }
-        }
-
-        async function handleLoginSubmit(e) {
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            const u = (document.getElementById("login-username").value || "").trim();
-            const p = (document.getElementById("login-password").value || "").trim();
-            const btn = document.getElementById("btn-login-submit");
-            const errBox = document.getElementById("login-error-msg");
-            errBox.style.display = "none";
-            if (btn) {
-                btn.disabled = true;
-                btn.innerText = "Memverifikasi...";
-            }
-
-            try {
-                const res = await fetch("/api/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username: u, password: p })
-                });
-
-                const data = await res.json();
-                if (res.ok && data.access_token) {
-                    localStorage.setItem("token", data.access_token);
-                    localStorage.setItem("skripsi_auth_token", data.access_token);
-                    const overlay = document.getElementById("login-overlay");
-                    if (overlay) {
-                        overlay.classList.add("hidden");
-                        overlay.style.display = "none";
-                    }
-                } else {
-                    errBox.innerText = data.detail || "Username atau password salah!";
-                    errBox.style.display = "block";
-                }
-            } catch (err) {
-                errBox.innerText = "Gagal terhubung ke server: " + err.message;
-                errBox.style.display = "block";
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerText = "Masuk ke Dashboard";
-                }
-            }
-            return false;
+        const token = localStorage.getItem("token") || localStorage.getItem("skripsi_auth_token");
+        if (!token) {
+            window.location.replace("/login");
         }
 
         function handleLogout() {
             localStorage.removeItem("token");
             localStorage.removeItem("skripsi_auth_token");
             if (typeof isScreenPoweredOn !== 'undefined' && isScreenPoweredOn) toggleScreenPower();
-            window.location.href = "/login";
+            window.location.replace("/login");
         }
-
-        checkAuth();
 
         // =====================================================================
         // SOCKET.IO & APPLICATION STATE
