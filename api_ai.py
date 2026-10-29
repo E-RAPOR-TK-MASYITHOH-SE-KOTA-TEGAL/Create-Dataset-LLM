@@ -244,7 +244,7 @@ def start_terminal_session(term_id=None, name=None):
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     )
 
-    terminals[term_id] = {"process": proc, "name": name}
+    terminals[term_id] = {"process": proc, "name": name, "logs": ""}
 
     def reader():
         buf = b""
@@ -258,6 +258,8 @@ def start_terminal_session(term_id=None, name=None):
                 try:
                     text = buf.decode("utf-8", errors="replace")
                     buf = b""
+                    if term_id in terminals:
+                        terminals[term_id]["logs"] = (terminals[term_id]["logs"] + text)[-300000:]
                     socketio.emit("terminal_output", {"term_id": term_id, "data": text})
                 except Exception:
                     pass
@@ -265,6 +267,15 @@ def start_terminal_session(term_id=None, name=None):
                 break
 
     threading.Thread(target=reader, daemon=True).start()
+
+    # Initial interactive prompt so terminal is never blank black
+    try:
+        init_cmd = f"Write-Host '[{name} Aktif - PowerShell]' -ForegroundColor Cyan; Write-Host ('Direktori: ' + (Get-Location).Path) -ForegroundColor DarkGray; Write-Host ''\n"
+        proc.stdin.write(init_cmd.encode("utf-8"))
+        proc.stdin.flush()
+    except Exception:
+        pass
+
     return term_id, name
 
 def write_terminal(tid, cmd):
@@ -276,7 +287,10 @@ def write_terminal(tid, cmd):
             proc.stdin.write((cmd + "\n").encode("utf-8"))
             proc.stdin.flush()
         except Exception as e:
-            socketio.emit("terminal_output", {"term_id": tid, "data": f"[ERROR] {e}\r\n"})
+            err = f"[ERROR] {e}\r\n"
+            if tid in terminals:
+                terminals[tid]["logs"] += err
+            socketio.emit("terminal_output", {"term_id": tid, "data": err})
 
 # ==============================================================================
 # SCREEN STREAMING
@@ -416,7 +430,7 @@ def handle_connect():
     emit("screen_toggle_status", {"enabled": screen_streaming_enabled})
     if not terminals:
         start_terminal_session("term-1", "Terminal 1")
-    term_list = [{"id": k, "name": v["name"]} for k, v in terminals.items()]
+    term_list = [{"id": k, "name": v["name"], "logs": v.get("logs", "")} for k, v in terminals.items()]
     emit("terminals_list", {"terminals": term_list})
 
 @socketio.on("disconnect")
@@ -433,9 +447,9 @@ def handle_toggle_screen(data):
 @socketio.on("new_terminal")
 def handle_new_terminal():
     tid, name = start_terminal_session()
-    term_list = [{"id": k, "name": v["name"]} for k, v in terminals.items()]
+    term_list = [{"id": k, "name": v["name"], "logs": v.get("logs", "")} for k, v in terminals.items()]
     socketio.emit("terminals_list", {"terminals": term_list})
-    emit("terminal_created", {"id": tid, "name": name})
+    emit("terminal_created", {"id": tid, "name": name, "logs": terminals[tid].get("logs", "")})
 
 @socketio.on("close_terminal")
 def handle_close_terminal(data):
@@ -446,7 +460,7 @@ def handle_close_terminal(data):
         except Exception:
             pass
         del terminals[tid]
-        term_list = [{"id": k, "name": v["name"]} for k, v in terminals.items()]
+        term_list = [{"id": k, "name": v["name"], "logs": v.get("logs", "")} for k, v in terminals.items()]
         socketio.emit("terminals_list", {"terminals": term_list})
 
 @socketio.on("terminal_input")

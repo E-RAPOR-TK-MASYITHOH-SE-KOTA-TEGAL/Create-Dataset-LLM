@@ -127,16 +127,6 @@
             display: none;
             line-height: 1.4;
         }
-
-        .hint-box {
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px dashed #334155;
-            border-radius: 6px;
-            padding: 8px 10px;
-            font-size: 0.72rem;
-            color: var(--text-muted);
-            text-align: center;
-        }
     </style>
 </head>
 <body>
@@ -147,30 +137,27 @@
 
         <div class="alert-error" id="login-error"></div>
 
-        <form onsubmit="handleFormSubmit(event)" style="display:flex; flex-direction:column; gap:14px;">
+        <form onsubmit="handleFormSubmit(event)" autocomplete="off" style="display:flex; flex-direction:column; gap:14px;">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" class="input-control" value="husain" required autocomplete="username">
+                <input type="text" id="username" class="input-control" placeholder="Masukkan username" required autocomplete="off" spellcheck="false">
             </div>
 
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" class="input-control" value="password_skripsi_aman" required autocomplete="current-password">
+                <input type="password" id="password" class="input-control" placeholder="Masukkan password" required autocomplete="new-password">
             </div>
 
             <button type="submit" class="btn-submit" id="btn-login">Masuk ke Dashboard</button>
         </form>
-
-        <div class="hint-box">
-            Kredensial Default: <strong>husain</strong> / <strong>password_skripsi_aman</strong>
-        </div>
     </div>
 
     <script>
         // Cek jika sudah memiliki token tersimpan, langsung arahkan ke dashboard
         const existingToken = localStorage.getItem('token') || localStorage.getItem('skripsi_auth_token');
         if (existingToken) {
-            window.location.href = '/';
+            document.getElementById('password').value = '';
+                    window.location.href = '/';
         }
 
         async function handleFormSubmit(e) {
@@ -200,6 +187,7 @@
                     // Simpan pada kedua key agar sinkron di semua halaman
                     localStorage.setItem('token', data.access_token);
                     localStorage.setItem('skripsi_auth_token', data.access_token);
+                    document.getElementById('password').value = '';
                     window.location.href = '/';
                 } else {
                     errBox.innerText = data.detail || 'Username atau password salah!';

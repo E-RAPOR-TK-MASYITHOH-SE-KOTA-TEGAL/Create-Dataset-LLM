@@ -825,11 +825,25 @@
 
         socket.on("terminals_list", (data) => {
             currentTerminalsList = data.terminals || [];
+            currentTerminalsList.forEach((term) => {
+                if (!terminalsData[term.id]) {
+                    terminalsData[term.id] = { name: term.name, logs: term.logs || "" };
+                } else if (term.logs && term.logs.length > (terminalsData[term.id].logs || "").length) {
+                    terminalsData[term.id].logs = term.logs;
+                }
+            });
             if (activeTermId === null && currentTerminalsList.length > 0) {
                 activeTermId = currentTerminalsList[0].id;
             } else if (activeTermId && !currentTerminalsList.some(t => t.id === activeTermId)) {
                 activeTermId = currentTerminalsList.length > 0 ? currentTerminalsList[0].id : null;
             }
+            renderTerminalTabs();
+            renderActiveTerminal();
+        });
+
+        socket.on("terminal_created", (data) => {
+            activeTermId = data.id;
+            terminalsData[data.id] = { name: data.name, logs: data.logs || "" };
             renderTerminalTabs();
             renderActiveTerminal();
         });
@@ -914,9 +928,12 @@
 
         function renderActiveTerminal() {
             const out = document.getElementById("active-term-output");
+            if (!out) return;
             if (activeTermId && terminalsData[activeTermId]) {
-                out.textContent = terminalsData[activeTermId].logs;
+                out.textContent = terminalsData[activeTermId].logs || "[Terminal siap - Menunggu input...]";
                 out.scrollTop = out.scrollHeight;
+            } else {
+                out.textContent = "[Tidak ada terminal aktif. Klik '+' untuk membuka terminal.]";
             }
         }
 
